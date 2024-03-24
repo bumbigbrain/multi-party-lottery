@@ -3,13 +3,13 @@
 pragma solidity ^0.8.11;
 import "./CommitReveal.sol";
 
-
 contract MPL is CommitReveal {
 
     struct Player {
         address addr;
-        uint choice;
-        bool isReveal;
+        bytes32 choice;
+        bool passedReveal;
+        uint realChoice;
 
     }
 
@@ -19,12 +19,14 @@ contract MPL is CommitReveal {
     uint256 public t3;
     uint256 public t4;
 
-    uint public n;
+    uint256 public n;
     uint public numPlayer;
     mapping (uint => Player) public player;
     uint public gameStage;
     uint public start_stage1;
     uint public start_stage2;
+    uint public start_stage3;
+    bool canRefund = false;
     
     
 
@@ -32,8 +34,8 @@ contract MPL is CommitReveal {
         owner = payable(msg.sender);
         t1 = 30 seconds;
         t2 = 30 seconds;
-        t3 = 1 minutes;
-        t4 = 1 minutes;
+        t3 = 30 seconds;
+        //t4 = 1 minutes;
         n = 3;
         numPlayer = 0;
         gameStage = 1;
@@ -41,8 +43,17 @@ contract MPL is CommitReveal {
     }
 
 
+    // let player get hashedchoice and pass through the joinGame()
+    function getHashedChoice(uint choice, uint salt) public view returns(bytes32) {
+        return getSaltedHash(bytes32(choice), bytes32(salt));
+
+    }
+
+
+
+
     
-    function joinGame(uint choice) public payable { //register player  //add input : choice, salt
+    function joinGame(bytes32 hashedChoice) public payable { //register player 
         require(msg.value == 1 ether, "You must pay 1 ether to play this game");
         require(numPlayer < n, "This game is full now"); 
         require(numPlayer == 0 || block.timestamp - start_stage1 <= t1);
@@ -51,13 +62,13 @@ contract MPL is CommitReveal {
             start_stage1 = block.timestamp;            
         }   
         player[numPlayer].addr = msg.sender;
-        // need to hash choice before stored 
-        player[numPlayer].choice = choice;
-        player[numPlayer].isReveal = false;
+        commit(hashedChoice);
+        player[numPlayer].choice = hashedChoice;
+        player[numPlayer].passedReveal = false;
         numPlayer++;
         
-         
     }
+
 
     function startStage2() public onlyowner {
         require(block.timestamp > start_stage1 + t1, "Can't start Stage2");
@@ -65,130 +76,69 @@ contract MPL is CommitReveal {
     }
 
 
-    function revealChoice(uint idx) public payable { // add input : choice, salt
+
+    function revealChoice(uint choice, uint salt, uint idx) public payable { // add input : choice, salt
         require(block.timestamp - start_stage2 <= t2, "Can't reveal now");
-        // collect revealer
         require(msg.sender == player[idx].addr);
-        player[idx].isReveal = true;
-
-        //send choice to hash and compare the hash with hashed choice 
-        
+        revealAnswer(bytes32(choice), bytes32(salt));
+        player[idx].passedReveal = true;
+        player[idx].realChoice = choice;
         
     }
 
 
-    //function checkRevealer
+    function seeCommited(uint idx) public view returns(bytes32) {
+        return commits[player[idx].addr].commit;
+    }
+
     function checkRevealer(uint idx) public view returns(bool){
-        return player[idx].isReveal;
+        return player[idx].passedReveal;
     }
 
 
-    function penalizeUser() public payable {
-
+    function startStage3() public onlyowner {
+        require(block.timestamp > start_stage2 + t2, "Can't start Stage3");
+        start_stage3 = block.timestamp;
     }
 
-    function getBalance(uint idx) public view returns(uint) {
-        return player[idx].addr.balance;
-    } // check
-
-
-
-    modifier onlyowner() {
-        require(msg.sender == owner);
-        _;
-    } 
-
-
-    
-    
-}// SPDX-License-Identifier: MIT
-
-pragma solidity ^0.8.11;
-
-
-contract Lottery {
-
-    struct Player {
-        address addr;
-        uint choice;
-        bool isReveal;
-
-    }
-
-    address payable public owner;
-    uint256 public t1;
-    uint256 public t2;
-    uint256 public t3;
-    uint256 public t4;
-
-    uint public n;
-    uint public numPlayer;
-    mapping (uint => Player) public player;
-    uint public gameStage;
-    uint public start_stage1;
-    uint public start_stage2;
-    
-    
-
-    constructor() {
-        owner = payable(msg.sender);
-        t1 = 30 seconds;
-        t2 = 30 seconds;
-        t3 = 1 minutes;
-        t4 = 1 minutes;
-        n = 3;
-        numPlayer = 0;
-        gameStage = 1;
-
+    function getBalanceContract() public view returns(uint256) {
+        return address(this).balance;
     }
 
 
-    
-    function joinGame(uint choice) public payable { //register player  //add input : choice, salt
-        require(msg.value == 1 ether, "You must pay 1 ether to play this game");
-        require(numPlayer < n, "This game is full now"); 
-        require(numPlayer == 0 || block.timestamp - start_stage1 <= t1);
+    function findWinner() public payable {
+        require(block.timestamp - start_stage3 <= t3, "Timed out to find winner");
+        uint result = 0;
         
-        if (numPlayer == 0) {
-            start_stage1 = block.timestamp;            
-        }   
-        player[numPlayer].addr = msg.sender;
-        // need to hash choice before stored 
-        player[numPlayer].choice = choice;
-        player[numPlayer].isReveal = false;
-        numPlayer++;
+        for (uint i = 0; i < n; i++){
+            if (player[i].passedReveal && (player[i].realChoice >= 0 && player[i].realChoice <= 999)) {
+                result = result ^ player[i].realChoice;
+            }
+        }
         
-         
-    }
-
-    function startStage2() public onlyowner {
-        require(block.timestamp > start_stage1 + t1, "Can't start Stage2");
-        start_stage2 = block.timestamp;
-    }
-
-
-    function revealChoice(uint idx) public payable { // add input : choice, salt
-        require(block.timestamp - start_stage2 <= t2, "Can't reveal now");
-        // collect revealer
-        require(msg.sender == player[idx].addr);
-        player[idx].isReveal = true;
-
-        //send choice to hash and compare the hash with hashed choice 
-        
+        result = result % n;
+        if (player[result].passedReveal) {
+            uint256 qwe = 1 ether * 98;
+            qwe = qwe/100;
+            payable(player[result].addr).transfer(qwe);
+            uint256 balance = getBalanceContract();
+            payable(owner).transfer(balance - qwe);
+        } else {
+            canRefund = true;
+        }
         
     }
 
-    //function checkRevealer
-    function checkRevealer(uint idx) public view returns(bool){
-        return player[idx].isReveal;
+    function refund() public payable {
+        require(canRefund, "Cannot refund, there is a winner.");
+        payable(msg.sender).transfer(1 ether);
     }
 
-
-    function penalizeUser() public payable {
-        
-    }
+    
+    
 
 
+    
 
     modifier onlyowner() {
         require(msg.sender == owner);
