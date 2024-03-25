@@ -22,41 +22,57 @@ contract MPL is CommitReveal {
     uint256 public n;
     uint public numPlayer;
     mapping (uint => Player) public player;
-    uint public gameStage;
     uint public start_stage1;
-    uint public start_stage2;
-    uint public start_stage3;
-    bool canRefund = false;
+    bool canRefund = true;
     
     
 
     constructor() {
         owner = payable(msg.sender);
-        t1 = 30 seconds;
-        t2 = 30 seconds;
-        t3 = 30 seconds;
+        t1 = 1 minutes;
+        t2 = 1 minutes;
+        t3 = 1 minutes;
         //t4 = 1 minutes;
         n = 3;
         numPlayer = 0;
-        gameStage = 1;
 
     }
 
 
-    // let player get hashedchoice and pass through the joinGame()
+
     function getHashedChoice(uint choice, uint salt) public view returns(bytes32) {
         return getSaltedHash(bytes32(choice), bytes32(salt));
 
     }
 
 
+    function checkState() public view returns(string memory) {
+        
+        if (start_stage1 <= block.timestamp && block.timestamp <= start_stage1 + t1) {
+            return "Now Stage : Stage 1";
+        }
+
+        if (start_stage1 + t1 <= block.timestamp && block.timestamp <= start_stage1 + t1 + t2) {
+            return "Now Stage : Stage 2";
+        }
+
+        if (start_stage1 + t1 + t2 <= block.timestamp && block.timestamp <= start_stage1 + t1 + t2 + t3) {
+            return "Now Stage : Stage 3";
+        }
+
+        if (start_stage1 + t1 + t2 + t3 <= block.timestamp) {
+            return "Now Stage : Stage 4";
+        }
+
+        return "Not started";
+    }
 
 
     
     function joinGame(bytes32 hashedChoice) public payable { //register player 
         require(msg.value == 1 ether, "You must pay 1 ether to play this game");
         require(numPlayer < n, "This game is full now"); 
-        require(numPlayer == 0 || block.timestamp - start_stage1 <= t1);
+        require(numPlayer == 0 || block.timestamp - start_stage1 <= t1, checkState());
         
         if (numPlayer == 0) {
             start_stage1 = block.timestamp;            
@@ -70,15 +86,10 @@ contract MPL is CommitReveal {
     }
 
 
-    function startStage2() public onlyowner {
-        require(block.timestamp > start_stage1 + t1, "Can't start Stage2");
-        start_stage2 = block.timestamp;
-    }
-
 
 
     function revealChoice(uint choice, uint salt, uint idx) public payable { // add input : choice, salt
-        require(block.timestamp - start_stage2 <= t2, "Can't reveal now");
+        require(start_stage1 + t1 <= block.timestamp && block.timestamp <= start_stage1 + t1 + t2, checkState());
         require(msg.sender == player[idx].addr);
         revealAnswer(bytes32(choice), bytes32(salt));
         player[idx].passedReveal = true;
@@ -91,15 +102,12 @@ contract MPL is CommitReveal {
         return commits[player[idx].addr].commit;
     }
 
+
     function checkRevealer(uint idx) public view returns(bool){
         return player[idx].passedReveal;
     }
 
 
-    function startStage3() public onlyowner {
-        require(block.timestamp > start_stage2 + t2, "Can't start Stage3");
-        start_stage3 = block.timestamp;
-    }
 
     function getBalanceContract() public view returns(uint256) {
         return address(this).balance;
@@ -107,7 +115,7 @@ contract MPL is CommitReveal {
 
 
     function findWinner() public payable {
-        require(block.timestamp - start_stage3 <= t3, "Timed out to find winner");
+        require(start_stage1 + t1 + t2 <= block.timestamp && block.timestamp <= start_stage1 + t1 + t2 + t3, checkState());
         uint result = 0;
         
         for (uint i = 0; i < n; i++){
@@ -124,28 +132,16 @@ contract MPL is CommitReveal {
             uint256 balance = getBalanceContract();
             payable(owner).transfer(balance - qwe);
         } else {
-            canRefund = true;
+            payable(owner).transfer(address(this).balance);
         }
+        canRefund = false;
         
     }
 
     function refund() public payable {
-        require(canRefund, "Cannot refund, there is a winner.");
+        require(canRefund && (start_stage1 + t1 + t2 + t3 <= block.timestamp), checkState());
         payable(msg.sender).transfer(1 ether);
     }
 
     
     
-
-
-    
-
-    modifier onlyowner() {
-        require(msg.sender == owner);
-        _;
-    } 
-
-
-    
-    
-}
