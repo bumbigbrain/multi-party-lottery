@@ -22,19 +22,20 @@ contract MPL is CommitReveal {
     uint256 public n;
     uint public numPlayer;
     mapping (uint => Player) public player;
-    uint public start_stage1;
+    uint public start_stage1 = 0;
     bool canRefund = true;
     
     
 
-    constructor() {
+    constructor(uint time1, uint time2, uint time3, uint n_player) {
         owner = payable(msg.sender);
-        t1 = 1 minutes;
-        t2 = 1 minutes;
-        t3 = 1 minutes;
+        t1 = time1;
+        t2 = time2;
+        t3 = time3;
         //t4 = 1 minutes;
-        n = 3;
+        n = n_player;
         numPlayer = 0;
+        
 
     }
 
@@ -47,6 +48,10 @@ contract MPL is CommitReveal {
 
 
     function checkState() public view returns(string memory) {
+
+        if (start_stage1 == 0){
+            return "Not started";
+        }
         
         if (start_stage1 <= block.timestamp && block.timestamp <= start_stage1 + t1) {
             return "Now Stage : Stage 1";
@@ -70,7 +75,7 @@ contract MPL is CommitReveal {
 
     
     function joinGame(bytes32 hashedChoice) public payable { //register player 
-        require(msg.value == 1 ether, "You must pay 1 ether to play this game");
+        require(msg.value == 0.001 ether, "You must pay 0.001 ether to play this game");
         require(numPlayer < n, "This game is full now"); 
         require(numPlayer == 0 || block.timestamp - start_stage1 <= t1, checkState());
         
@@ -114,7 +119,7 @@ contract MPL is CommitReveal {
     }
 
 
-    function findWinner() public payable {
+    function findWinner() public payable onlyowner {
         require(start_stage1 + t1 + t2 <= block.timestamp && block.timestamp <= start_stage1 + t1 + t2 + t3, checkState());
         uint result = 0;
         
@@ -126,22 +131,53 @@ contract MPL is CommitReveal {
         
         result = result % n;
         if (player[result].passedReveal) {
-            uint256 qwe = 1 ether * 98;
+            uint256 qwe = 0.001 ether * 98 * numPlayer;
             qwe = qwe/100;
             payable(player[result].addr).transfer(qwe);
-            uint256 balance = getBalanceContract();
-            payable(owner).transfer(balance - qwe);
+            qwe = 0.001 ether * 2 * numPlayer;
+            qwe = qwe/100;
+            payable(owner).transfer(qwe);
         } else {
             payable(owner).transfer(address(this).balance);
         }
         canRefund = false;
-        
+        _restart();
     }
 
     function refund() public payable {
         require(canRefund && (start_stage1 + t1 + t2 + t3 <= block.timestamp), checkState());
-        payable(msg.sender).transfer(1 ether);
+        require(msg.sender != owner);
+        payable(msg.sender).transfer(0.001 ether);
+        if (address(this).balance == 0) {
+            _restart();
+        }
+    }
+
+    
+    function _restart() private {
+        start_stage1 = 0;
+        numPlayer = 0;
+        
+        for (uint i = 0; i < n; i++){
+            delete player[i];
+            delete commits[player[i].addr];
+        }
+
+        
     }
 
     
     
+
+
+    
+
+    modifier onlyowner() {
+        require(msg.sender == owner);
+        _;
+    } 
+
+
+    
+    
+}
