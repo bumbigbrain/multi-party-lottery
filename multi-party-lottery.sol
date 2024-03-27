@@ -13,6 +13,7 @@ contract MPL is CommitReveal {
 
     }
 
+
     address payable public owner;
     uint256 public t1;
     uint256 public t2;
@@ -93,7 +94,7 @@ contract MPL is CommitReveal {
 
 
 
-    function revealChoice(uint choice, uint salt, uint idx) public payable { // add input : choice, salt
+    function revealChoice(uint choice, uint salt, uint idx) public { // add input : choice, salt
         require(start_stage1 + t1 <= block.timestamp && block.timestamp <= start_stage1 + t1 + t2, checkState());
         require(msg.sender == player[idx].addr);
         revealAnswer(bytes32(choice), bytes32(salt));
@@ -119,23 +120,38 @@ contract MPL is CommitReveal {
     }
 
 
-    function findWinner() public payable onlyowner {
+
+    function _findPlayerNotRevealAndRefund() private {
+        for (uint256 i = 0; i < numPlayer; i ++) {
+            if (player[i].passedReveal == false) {
+                uint256 toPayOwner = 0.001 ether * 2 / 100;
+                payable(owner).transfer(toPayOwner);
+                payable(player[i].addr).transfer(0.001 ether - toPayOwner);
+            }
+        }
+    }
+
+
+    function findWinner() public onlyowner {
         require(start_stage1 + t1 + t2 <= block.timestamp && block.timestamp <= start_stage1 + t1 + t2 + t3, checkState());
-        uint result = 0;
+        uint256 result = 0;
+
+
+        _findPlayerNotRevealAndRefund();
         
-        for (uint i = 0; i < n; i++){
+        for (uint256 i = 0; i < numPlayer; i++){
             if (player[i].passedReveal && (player[i].realChoice >= 0 && player[i].realChoice <= 999)) {
                 result = result ^ player[i].realChoice;
             }
         }
         
-        result = result % n;
-        if (player[result].passedReveal) {
-            uint256 qwe = 0.001 ether * 98 * numPlayer;
-            qwe = qwe/100;
-            payable(player[result].addr).transfer(qwe);
-            qwe = 0.001 ether * 2 * numPlayer;
-            qwe = qwe/100;
+        uint256 winnerIdx = uint256(keccak256(abi.encodePacked(result))) % numPlayer;
+
+
+        if (player[winnerIdx].passedReveal) {
+            uint256 qwe = (0.001 ether * 98 * numPlayer) / 100;
+            payable(player[winnerIdx].addr).transfer(qwe);
+            qwe = (0.001 ether * 2 * numPlayer) / 100;
             payable(owner).transfer(qwe);
         } else {
             payable(owner).transfer(address(this).balance);
